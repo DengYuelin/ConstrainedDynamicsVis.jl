@@ -1,18 +1,37 @@
+function transform(x, q, shape)
+    scale_transform = LinearMap(diagm(shape.scale))
+    x_transform = Translation(x + vrotate(shape.xoffset, q))
+    q_transform = LinearMap(q * shape.qoffset)
+
+    return compose(x_transform, q_transform, scale_transform)
+end
+
+MeshCat.js_scaling(s::AbstractVector) = s
+MeshCat.js_position(p::AbstractVector) = p
+
 function preparevis!(storage::Storage{T,N}, id, shape, animation, shapevisualizer, framevisualizer, showshape, showframes) where {T,N}
     if showshape
         for i=1:N
-            shapecomposition = compose(Translation(storage.x[id][i] + vrotate(shape.xoffset, storage.q[id][i])),LinearMap(storage.q[id][i] * shape.qoffset))
+            x = storage.x[id][i]
+            q = storage.q[id][i]
+            # TODO currently setting props directly because MeshCat/Rotations doesn't convert scaled rotation properly.
+            # If this changes, do similarily to origin
             atframe(animation, i) do
-                settransform!(shapevisualizer, shapecomposition)
+                setprop!(shapevisualizer, "scale", js_scaling(shape.scale))
+                setprop!(shapevisualizer, "position", js_position(x + vrotate(shape.xoffset, q)))
+                setprop!(shapevisualizer, "quaternion", js_quaternion(q * shape.qoffset))
             end
         end
     end
 
     if showframes
         for i=1:N
-            framecomposition = compose(Translation(storage.x[id][i]),LinearMap(storage.q[id][i]))
+            x = storage.x[id][i]
+            q = storage.q[id][i]
             atframe(animation, i) do
-                settransform!(framevisualizer, framecomposition)
+                setprop!(framevisualizer, "scale", js_scaling(SA{T}[1;1;1]))
+                setprop!(framevisualizer, "position", js_position(x))
+                setprop!(framevisualizer, "quaternion", js_quaternion(q))
             end
         end
     end
@@ -20,6 +39,28 @@ function preparevis!(storage::Storage{T,N}, id, shape, animation, shapevisualize
     return
 end
 
+function MeshCat.setobject!(subvisshape, visshape, shape::Shape)
+    setobject!(subvisshape, visshape, MeshPhongMaterial(color=shape.color))
+end
+
+function MeshCat.setobject!(subvisshape, visshape, shape::ConstrainedDynamics.Mesh)
+    if visshape.mtl_library == ""
+        visshape = MeshFileGeometry(visshape.contents, visshape.format)
+        setobject!(subvisshape, visshape, MeshPhongMaterial(color=shape.color))
+    else
+        setobject!(subvisshape, visshape)
+    end
+end
+
+"""
+    visualize(mechanism, storage; env, showframes)
+
+Visualize a `mechanism` with a trajectory stored in `storage`.
+
+# Available kwargs
+* `showframes`: Display the coordinate frames of the bodies.
+* `env`:        Choose the visualization environment ("blink", "browser", "editor").
+"""
 function visualize(mechanism::AbstractMechanism, storage::Storage{T,N}; env::String = "blink", showframes::Bool = false) where {T,N}
     storage = deepcopy(storage) 
     bodies = mechanism.bodies
@@ -56,7 +97,7 @@ function visualize(mechanism::AbstractMechanism, storage::Storage{T,N}; env::Str
         showshape = false
         if visshape !== nothing
             subvisshape = vis["bodies/body:"*string(id)]
-            setobject!(subvisshape, visshape, MeshPhongMaterial(color=shape.color))
+            setobject!(subvisshape,visshape,shape)
             showshape = true
         end
         if showframes
@@ -71,9 +112,9 @@ function visualize(mechanism::AbstractMechanism, storage::Storage{T,N}; env::Str
     visshape = convertshape(shape)
     if visshape !== nothing
         subvisshape = vis["bodies/origin:"*string(id)]
-        setobject!(subvisshape, visshape, MeshPhongMaterial(color=shape.color))
-        composition = compose(Translation(shape.xoffset),LinearMap(shape.qoffset))
-        settransform!(subvisshape, composition)
+        setobject!(subvisshape,visshape,shape)
+        shapetransform = transform(szeros(T,3), one(UnitQuaternion{T}), shape)
+        settransform!(subvisshape, shapetransform)
     end
     if showframes
         subvisframe = vis["frames/origin:"*string(id)]

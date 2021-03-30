@@ -19,7 +19,7 @@ function convertshape(pyramid::ConstrainedDynamics.Pyramid)
 end
 
 function convertshape(mesh::ConstrainedDynamics.Mesh)
-    return MeshCat.MeshFileGeometry(mesh.path)
+    return MeshFileObject(mesh.path)
 end
 
 function convertshape(::ConstrainedDynamics.EmptyShape)
